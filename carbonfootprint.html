@@ -79,6 +79,9 @@
 </head>
 <body>
 
+    <!-- Audio Element -->
+    <audio id="choice-sound" src="punch.mp3" preload="auto"></audio>
+
     <div id="game-container"></div>
 
     <!-- UI Overlay -->
@@ -96,7 +99,6 @@
                 <span id="score-text" class="text-base font-black text-emerald-800">5.0 kg</span>
             </div>
             <div class="carbon-track" style="height: 24px;">
-                <!-- Bar fills up as footprint increases -->
                 <div id="carbon-bar" class="score-bar h-full" style="width: 10%"></div>
             </div>
         </div>
@@ -145,12 +147,13 @@
     <script>
         // --- Configuration ---
         let scene, camera, renderer, worldGroup;
-        let carbonScore = 5.0; // Starting kg
-        const MAX_CARBON = 50.0; // The threshold for a "full" bar
+        let carbonScore = 5.0; 
+        const MAX_CARBON = 50.0;
         let gameState = 'START'; 
         let currentChapter = 0;
         let activeChoices = [];
         let playerX = 0;
+        const choiceSound = document.getElementById('choice-sound');
         
         const COLORS = {
             sunshine: 0xffc926,
@@ -233,6 +236,13 @@
             }
         ];
 
+        function playPunchSound() {
+            if (choiceSound) {
+                choiceSound.currentTime = 0;
+                choiceSound.play().catch(e => console.log("Audio play blocked by browser policy"));
+            }
+        }
+
         function init3D() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -264,10 +274,10 @@
             body.scale.set(1, 0.9, 0.85);
             blobGroup.add(body);
 
-            const eyeWhiteGeo = new THREE.SphereGeometry(0.2, 16, 16);
-            const eyeBlackGeo = new THREE.SphereGeometry(0.08, 16, 16);
             const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
             const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const eyeWhiteGeo = new THREE.SphereGeometry(0.2, 16, 16);
+            const eyeBlackGeo = new THREE.SphereGeometry(0.08, 16, 16);
 
             const leftEye = new THREE.Mesh(eyeWhiteGeo, whiteMat);
             leftEye.position.set(-0.25, 0.2, 0.65);
@@ -307,58 +317,34 @@
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            canvas.width = 256;
-            canvas.height = 256;
-            
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = '#18542a';
-            ctx.lineWidth = 12;
-            ctx.beginPath();
-            ctx.arc(128, 128, 100, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            
-            ctx.font = "110px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
+            canvas.width = 256; canvas.height = 256;
+            ctx.fillStyle = 'white'; ctx.strokeStyle = '#18542a'; ctx.lineWidth = 12;
+            ctx.beginPath(); ctx.arc(128, 128, 100, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.font = "110px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             ctx.fillText(option.emoji, 128, 128);
             
             const texture = new THREE.CanvasTexture(canvas);
-            const spriteMat = new THREE.SpriteMaterial({ map: texture });
-            const sprite = new THREE.Sprite(spriteMat);
-            sprite.scale.set(3.2, 3.2, 1);
-            sprite.position.y = 3.5; 
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
+            sprite.scale.set(3.2, 3.2, 1); sprite.position.y = 3.5; 
             group.add(sprite);
 
             const textCanvas = document.createElement('canvas');
             const tCtx = textCanvas.getContext('2d');
-            textCanvas.width = 512;
-            textCanvas.height = 128;
-            
-            tCtx.fillStyle = 'white';
-            tCtx.strokeStyle = '#18542a';
-            tCtx.lineWidth = 8;
+            textCanvas.width = 512; textCanvas.height = 128;
+            tCtx.fillStyle = 'white'; tCtx.strokeStyle = '#18542a'; tCtx.lineWidth = 8;
             function roundRect(x, y, w, h, r) {
                 tCtx.beginPath(); tCtx.moveTo(x+r, y); tCtx.arcTo(x+w, y, x+w, y+h, r); tCtx.arcTo(x+w, y+h, x, y+h, r); tCtx.arcTo(x, y+h, x, y, r); tCtx.arcTo(x, y, x+w, y, r); tCtx.closePath();
             }
-            roundRect(56, 14, 400, 100, 50);
-            tCtx.fill();
-            tCtx.stroke();
-
-            tCtx.fillStyle = '#18542a';
-            tCtx.font = 'bold 36px Quicksand, sans-serif';
-            tCtx.textAlign = 'center';
+            roundRect(56, 14, 400, 100, 50); tCtx.fill(); tCtx.stroke();
+            tCtx.fillStyle = '#18542a'; tCtx.font = 'bold 36px Quicksand, sans-serif'; tCtx.textAlign = 'center';
             tCtx.fillText(option.text.toUpperCase(), 256, 78);
             
-            const textTex = new THREE.CanvasTexture(textCanvas);
-            const textSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTex }));
-            textSprite.scale.set(4, 1, 1);
-            textSprite.position.y = 1.2; 
+            const textSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(textCanvas) }));
+            textSprite.scale.set(4, 1, 1); textSprite.position.y = 1.2; 
             group.add(textSprite);
 
             group.position.set(xPos, 0, SPAWN_DISTANCE);
             group.userData = option;
-            
             worldGroup.add(group);
             activeChoices.push(group);
         }
@@ -373,23 +359,12 @@
             return isIndexUp && isMiddleUp && isRingDown && isPinkyDown;
         }
 
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.6
-        });
-
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         hands.onResults((results) => {
             if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
             const landmarks = results.multiHandLandmarks[0];
-            const wrist = landmarks[0];
-            playerX = (0.5 - wrist.x) * MOVEMENT_RANGE;
-            
+            playerX = (0.5 - landmarks[0].x) * MOVEMENT_RANGE;
             if (window.playerMesh) {
                 window.playerMesh.position.x += (playerX - window.playerMesh.position.x) * MOVEMENT_SMOOTHING;
                 window.playerMesh.rotation.y = (playerX - window.playerMesh.position.x) * 0.5;
@@ -397,7 +372,6 @@
                 const stretch = 1 + Math.abs(window.playerMesh.position.x - playerX) * 0.5;
                 window.playerMesh.scale.set(1/stretch, stretch, 1);
             }
-
             if (gameState === 'START' && isPeaceSign(landmarks)) startGame();
         });
 
@@ -428,10 +402,8 @@
             activeChoices.forEach(c => worldGroup.remove(c));
             activeChoices = [];
             
-            // Randomize positions (Left vs Right)
             const xPositions = [-2.8, 2.8];
             const shuffledX = xPositions.sort(() => Math.random() - 0.5);
-            
             chapter.options.forEach((opt, idx) => createChoiceObject(opt, shuffledX[idx]));
         }
 
@@ -440,37 +412,30 @@
             const percentage = Math.min(100, (carbonScore / MAX_CARBON) * 100);
             document.getElementById('carbon-bar').style.width = `${percentage}%`;
             document.getElementById('score-text').innerText = `${carbonScore.toFixed(1)} kg`;
-            
             const bar = document.getElementById('carbon-bar');
-            if (carbonScore < 15) bar.style.backgroundColor = '#9abc05'; // Green
-            else if (carbonScore < 30) bar.style.backgroundColor = '#ffc926'; // Yellow
-            else bar.style.backgroundColor = '#d52518'; // Red
+            if (carbonScore < 15) bar.style.backgroundColor = '#9abc05';
+            else if (carbonScore < 30) bar.style.backgroundColor = '#ffc926';
+            else bar.style.backgroundColor = '#d52518';
         }
 
         function endGame() {
             gameState = 'END';
             document.getElementById('game-ui').style.display = 'none';
-            const endScreen = document.getElementById('end-screen');
-            endScreen.style.display = 'flex';
-            
-            const finalScoreEl = document.getElementById('final-score');
-            finalScoreEl.innerText = `${carbonScore.toFixed(1)} kg`;
+            document.getElementById('end-screen').style.display = 'flex';
+            document.getElementById('final-score').innerText = `${carbonScore.toFixed(1)} kg`;
 
             const endTitle = document.getElementById('end-title');
             const endEmoji = document.getElementById('end-emoji');
             const endMessage = document.getElementById('end-message');
 
             if (carbonScore < 15) {
-                endTitle.innerText = "Earth Hero! 🌍";
-                endEmoji.innerText = "🌟";
+                endTitle.innerText = "Earth Hero! 🌍"; endEmoji.innerText = "🌟";
                 endMessage.innerText = "Amazing! Your footprint is tiny. You're a true protector of the planet!";
             } else if (carbonScore < 30) {
-                endTitle.innerText = "Eco Explorer! 🌱";
-                endEmoji.innerText = "👍";
+                endTitle.innerText = "Eco Explorer! 🌱"; endEmoji.innerText = "👍";
                 endMessage.innerText = "Good effort! You made some great choices, but there's room to save even more carbon.";
             } else {
-                endTitle.innerText = "Keep Trying! 🌪️";
-                endEmoji.innerText = "🚲";
+                endTitle.innerText = "Keep Trying! 🌪️"; endEmoji.innerText = "🚲";
                 endMessage.innerText = "Your footprint is a bit heavy. Try making greener choices next time to help the Earth!";
             }
         }
@@ -489,6 +454,7 @@
                     const dist = Math.sqrt(dx*dx + dz*dz);
 
                     if (dist < 1.5) {
+                        playPunchSound(); // PLAY SOUND HERE
                         updateCarbon(choice.userData.impact);
                         worldGroup.remove(choice);
                         activeChoices.splice(i, 1);
