@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carbon Quest: Your Everyday Journey</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MediaPipe and Three.js Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --sunshine: #ffc926;
+            --cream: #f3e8cc;
+            --forest: #18542a;
+            --tomato: #d52518;
+            --carrot: #f96015;
+            --kiwi: #9abc05;
+        }
+        body { margin: 0; overflow: hidden; background: var(--cream); font-family: 'Quicksand', sans-serif; }
+        
+        #video-container { 
+            position: absolute; bottom: 20px; right: 20px; width: 160px; height: 120px; 
+            border-radius: 30px; overflow: hidden; border: 6px solid var(--forest); 
+            transform: scaleX(-1); box-shadow: 0 10px 0px rgba(0,0,0,0.1); 
+        }
+
+        #game-ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        
+        .bubble-card {
+            background: white;
+            border: 4px solid var(--forest);
+            border-bottom-width: 10px;
+            border-radius: 40px;
+            box-shadow: 0 15px 30px rgba(24, 84, 42, 0.1);
+        }
+
+        .carbon-track {
+            background: #e5dfcf;
+            border: 3px solid var(--forest);
+            height: 32px;
+            border-radius: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .score-bar { 
+            transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); 
+            background: var(--kiwi);
+            border-right: 3px solid var(--forest);
+        }
+
+        .floating-bounce { animation: bounce 3s ease-in-out infinite; }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0px) rotate(-1deg); }
+            50% { transform: translateY(-15px) rotate(1deg); }
+        }
+
+        .text-handdrawn {
+            letter-spacing: -0.02em;
+            color: var(--forest);
+        }
+
+        #end-screen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(243, 232, 204, 0.95);
+            z-index: 100;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+
+    <!-- UI Overlay -->
+    <div id="game-ui">
+        <!-- Top Left: Chapter Info -->
+        <div class="absolute top-6 left-6 bubble-card px-4 py-2 flex flex-col hidden sm:flex">
+            <span class="text-[10px] font-black text-orange-500 uppercase tracking-widest">Adventure Path</span>
+            <span id="scene-name" class="text-lg font-black text-handdrawn">Loading...</span>
+        </div>
+
+        <!-- Top Center: Carbon Meter -->
+        <div class="absolute top-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bubble-card p-3 flex flex-col gap-2">
+            <div class="flex justify-between items-center px-1">
+                <span class="text-xs font-bold uppercase tracking-widest text-emerald-700">👣 Carbon Footprint</span>
+                <span id="score-text" class="text-base font-black text-emerald-800">5.0 kg</span>
+            </div>
+            <div class="carbon-track" style="height: 24px;">
+                <!-- Bar fills up as footprint increases -->
+                <div id="carbon-bar" class="score-bar h-full" style="width: 10%"></div>
+            </div>
+        </div>
+
+        <!-- Bottom Center: Interaction Prompts -->
+        <div id="prompt-container" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 text-center transition-all duration-500 w-[90%] max-w-sm">
+            <div class="bubble-card py-4 px-6 inline-block w-full shadow-2xl">
+                <h1 id="main-prompt" class="text-2xl sm:text-3xl font-black mb-1 text-handdrawn uppercase">Ready?</h1>
+                <p id="sub-prompt" class="text-sm text-slate-600 font-bold leading-tight">Show a Peace Sign ✌️ to start your quest!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- End Screen Overlay -->
+    <div id="end-screen">
+        <div class="bubble-card p-8 max-w-md w-full pointer-events-auto">
+            <div id="end-emoji" class="text-7xl mb-4 floating-bounce">🏆</div>
+            <h2 id="end-title" class="text-4xl font-black text-handdrawn uppercase mb-2">Great Job!</h2>
+            <div class="bg-emerald-50 rounded-3xl p-6 border-2 border-emerald-200 mb-6">
+                <p class="text-emerald-700 font-bold uppercase tracking-widest text-xs mb-1">Your Final Footprint</p>
+                <p id="final-score" class="text-5xl font-black text-emerald-800">0.0 kg</p>
+            </div>
+            <p id="end-message" class="text-slate-600 font-bold mb-8 leading-relaxed">You've successfully completed your quest!</p>
+            <button onclick="window.location.reload()" class="w-full px-8 py-4 bg-[#18542a] text-white text-xl font-black rounded-full shadow-lg border-b-[6px] border-black active:translate-y-1 active:border-b-0 transition-all uppercase italic">
+                Play Again 🔄
+            </button>
+        </div>
+    </div>
+
+    <!-- Hidden Video for Tracking -->
+    <div id="video-container">
+        <video id="input-video" class="w-full h-full object-cover"></video>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 bg-[#ffc926] flex items-center justify-center z-50 flex-col">
+        <div id="loading-content" class="text-center p-10">
+            <div class="text-[120px] mb-8 floating-bounce">🍀</div>
+            <h2 class="text-5xl font-black text-[#18542a] uppercase tracking-tighter mb-4">Carbon Quest</h2>
+            <div class="w-48 h-3 bg-[#18542a]/20 rounded-full overflow-hidden mx-auto">
+                <div class="h-full bg-[#18542a] w-1/3 animate-pulse"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        let scene, camera, renderer, worldGroup;
+        let carbonScore = 5.0; // Starting kg
+        const MAX_CARBON = 50.0; // The threshold for a "full" bar
+        let gameState = 'START'; 
+        let currentChapter = 0;
+        let activeChoices = [];
+        let playerX = 0;
+        
+        const COLORS = {
+            sunshine: 0xffc926,
+            cream: 0xf3e8cc,
+            forest: 0x18542a,
+            tomato: 0xd52518,
+            carrot: 0xf96015,
+            kiwi: 0x9abc05
+        };
+
+        const MOVEMENT_SMOOTHING = 0.08; 
+        const MOVEMENT_RANGE = 7.5;        
+        const CHOICE_SPEED = 0.2; 
+        const SPAWN_DISTANCE = -25;      
+
+        const chapters = [
+            {
+                name: "The Recycler",
+                prompt: "Finished your yogurt! Now what?",
+                options: [
+                    { text: "Rinse & Recycle", emoji: '🧼', impact: 0.5, color: COLORS.kiwi },
+                    { text: "Toss Directly", emoji: '🗑️', impact: 5.0, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Grocery Run",
+                prompt: "Which bag is better?",
+                options: [
+                    { text: "My Cloth Bag", emoji: '👜', impact: 0.2, color: COLORS.kiwi },
+                    { text: "Store Plastic", emoji: '🛍️', impact: 4.5, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Water Warden",
+                prompt: "Scrubbing soapy hands...",
+                options: [
+                    { text: "Tap Off", emoji: '🛑', impact: 0.5, color: COLORS.kiwi },
+                    { text: "Running Sink", emoji: '🚿', impact: 6.0, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Water Warden",
+                prompt: "Leftover water in your glass?",
+                options: [
+                    { text: "Thirsty Plant", emoji: '🌱', impact: 0.1, color: COLORS.kiwi },
+                    { text: "Down Drain", emoji: '🕳️', impact: 3.5, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Energy Expert",
+                prompt: "Beautiful sunny day!",
+                options: [
+                    { text: "Open Curtains", emoji: '☀️', impact: 0.0, color: COLORS.kiwi },
+                    { text: "Overhead Light", emoji: '💡', impact: 7.0, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Energy Expert",
+                prompt: "Finished playing games!",
+                options: [
+                    { text: "Off Completely", emoji: '🔌', impact: 0.5, color: COLORS.kiwi },
+                    { text: "Leave Standby", emoji: '📺', impact: 8.0, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Toy Tracker",
+                prompt: "Broken toy truck wheel...",
+                options: [
+                    { text: "Glue & Repair", emoji: '🔧', impact: 1.0, color: COLORS.kiwi },
+                    { text: "Ask for New", emoji: '🚮', impact: 10.0, color: COLORS.tomato }
+                ]
+            },
+            {
+                name: "Toy Tracker",
+                prompt: "Outgrown your T-shirt?",
+                options: [
+                    { text: "Donate/Share", emoji: '👕', impact: 0.5, color: COLORS.kiwi },
+                    { text: "Garbage Bin", emoji: '🗑️', impact: 9.0, color: COLORS.tomato }
+                ]
+            }
+        ];
+
+        function init3D() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('game-container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+            scene.add(ambientLight);
+            
+            const pointLight = new THREE.PointLight(0xffffff, 0.4);
+            pointLight.position.set(10, 10, 10);
+            scene.add(pointLight);
+
+            worldGroup = new THREE.Group();
+            scene.add(worldGroup);
+
+            const floorGeo = new THREE.PlaneGeometry(100, 100);
+            const floorMat = new THREE.MeshStandardMaterial({ color: COLORS.cream });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            const blobGroup = new THREE.Group();
+            const bodyGeo = new THREE.SphereGeometry(0.8, 32, 32);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: COLORS.sunshine, roughness: 0.1 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.scale.set(1, 0.9, 0.85);
+            blobGroup.add(body);
+
+            const eyeWhiteGeo = new THREE.SphereGeometry(0.2, 16, 16);
+            const eyeBlackGeo = new THREE.SphereGeometry(0.08, 16, 16);
+            const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+            const leftEye = new THREE.Mesh(eyeWhiteGeo, whiteMat);
+            leftEye.position.set(-0.25, 0.2, 0.65);
+            const leftPupil = new THREE.Mesh(eyeBlackGeo, blackMat);
+            leftPupil.position.set(-0.25, 0.2, 0.83);
+
+            const rightEye = new THREE.Mesh(eyeWhiteGeo, whiteMat);
+            rightEye.position.set(0.25, 0.2, 0.65);
+            const rightPupil = new THREE.Mesh(eyeBlackGeo, blackMat);
+            rightPupil.position.set(0.25, 0.2, 0.83);
+
+            blobGroup.add(leftEye, leftPupil, rightEye, rightPupil);
+            
+            const cheekGeo = new THREE.CircleGeometry(0.15, 16);
+            const cheekMat = new THREE.MeshBasicMaterial({ color: 0xf96015, transparent: true, opacity: 0.4 });
+            const lCheek = new THREE.Mesh(cheekGeo, cheekMat);
+            lCheek.position.set(-0.45, 0, 0.7);
+            const rCheek = new THREE.Mesh(cheekGeo, cheekMat);
+            rCheek.position.set(0.45, 0, 0.7);
+            blobGroup.add(lCheek, rCheek);
+
+            window.playerMesh = blobGroup;
+            window.playerMesh.position.y = 0.8;
+            scene.add(window.playerMesh);
+
+            camera.position.set(0, 5, 10);
+            camera.lookAt(0, 1, 0);
+            scene.background = new THREE.Color(COLORS.cream);
+        }
+
+        function createChoiceObject(option, xPos) {
+            const group = new THREE.Group();
+            const platformGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.2, 32);
+            const platformMat = new THREE.MeshStandardMaterial({ color: option.color, roughness: 0.5 });
+            const platform = new THREE.Mesh(platformGeo, platformMat);
+            group.add(platform);
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 256;
+            
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = '#18542a';
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.arc(128, 128, 100, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            ctx.font = "110px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(option.emoji, 128, 128);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(3.2, 3.2, 1);
+            sprite.position.y = 3.5; 
+            group.add(sprite);
+
+            const textCanvas = document.createElement('canvas');
+            const tCtx = textCanvas.getContext('2d');
+            textCanvas.width = 512;
+            textCanvas.height = 128;
+            
+            tCtx.fillStyle = 'white';
+            tCtx.strokeStyle = '#18542a';
+            tCtx.lineWidth = 8;
+            function roundRect(x, y, w, h, r) {
+                tCtx.beginPath(); tCtx.moveTo(x+r, y); tCtx.arcTo(x+w, y, x+w, y+h, r); tCtx.arcTo(x+w, y+h, x, y+h, r); tCtx.arcTo(x, y+h, x, y, r); tCtx.arcTo(x, y, x+w, y, r); tCtx.closePath();
+            }
+            roundRect(56, 14, 400, 100, 50);
+            tCtx.fill();
+            tCtx.stroke();
+
+            tCtx.fillStyle = '#18542a';
+            tCtx.font = 'bold 36px Quicksand, sans-serif';
+            tCtx.textAlign = 'center';
+            tCtx.fillText(option.text.toUpperCase(), 256, 78);
+            
+            const textTex = new THREE.CanvasTexture(textCanvas);
+            const textSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTex }));
+            textSprite.scale.set(4, 1, 1);
+            textSprite.position.y = 1.2; 
+            group.add(textSprite);
+
+            group.position.set(xPos, 0, SPAWN_DISTANCE);
+            group.userData = option;
+            
+            worldGroup.add(group);
+            activeChoices.push(group);
+        }
+
+        const videoElement = document.getElementById('input-video');
+
+        function isPeaceSign(landmarks) {
+            const isIndexUp = landmarks[8].y < landmarks[6].y;
+            const isMiddleUp = landmarks[12].y < landmarks[10].y;
+            const isRingDown = landmarks[16].y > landmarks[14].y;
+            const isPinkyDown = landmarks[20].y > landmarks[18].y;
+            return isIndexUp && isMiddleUp && isRingDown && isPinkyDown;
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults((results) => {
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+            const landmarks = results.multiHandLandmarks[0];
+            const wrist = landmarks[0];
+            playerX = (0.5 - wrist.x) * MOVEMENT_RANGE;
+            
+            if (window.playerMesh) {
+                window.playerMesh.position.x += (playerX - window.playerMesh.position.x) * MOVEMENT_SMOOTHING;
+                window.playerMesh.rotation.y = (playerX - window.playerMesh.position.x) * 0.5;
+                window.playerMesh.rotation.z = (window.playerMesh.position.x - playerX) * 0.3;
+                const stretch = 1 + Math.abs(window.playerMesh.position.x - playerX) * 0.5;
+                window.playerMesh.scale.set(1/stretch, stretch, 1);
+            }
+
+            if (gameState === 'START' && isPeaceSign(landmarks)) startGame();
+        });
+
+        const cameraStart = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+
+        function startGame() {
+            if (gameState !== 'START') return;
+            gameState = 'PLAYING';
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('prompt-container').style.opacity = '0';
+            setTimeout(loadChapter, 800);
+        }
+
+        function loadChapter() {
+            if (currentChapter >= chapters.length) {
+                endGame();
+                return;
+            }
+            const chapter = chapters[currentChapter];
+            document.getElementById('scene-name').innerText = chapter.name;
+            document.getElementById('main-prompt').innerText = chapter.prompt;
+            document.getElementById('sub-prompt').innerText = "Catch the ECO CHOICE!";
+            document.getElementById('prompt-container').style.opacity = '1';
+
+            activeChoices.forEach(c => worldGroup.remove(c));
+            activeChoices = [];
+            
+            // Randomize positions (Left vs Right)
+            const xPositions = [-2.8, 2.8];
+            const shuffledX = xPositions.sort(() => Math.random() - 0.5);
+            
+            chapter.options.forEach((opt, idx) => createChoiceObject(opt, shuffledX[idx]));
+        }
+
+        function updateCarbon(impact) {
+            carbonScore = Math.max(0, carbonScore + impact);
+            const percentage = Math.min(100, (carbonScore / MAX_CARBON) * 100);
+            document.getElementById('carbon-bar').style.width = `${percentage}%`;
+            document.getElementById('score-text').innerText = `${carbonScore.toFixed(1)} kg`;
+            
+            const bar = document.getElementById('carbon-bar');
+            if (carbonScore < 15) bar.style.backgroundColor = '#9abc05'; // Green
+            else if (carbonScore < 30) bar.style.backgroundColor = '#ffc926'; // Yellow
+            else bar.style.backgroundColor = '#d52518'; // Red
+        }
+
+        function endGame() {
+            gameState = 'END';
+            document.getElementById('game-ui').style.display = 'none';
+            const endScreen = document.getElementById('end-screen');
+            endScreen.style.display = 'flex';
+            
+            const finalScoreEl = document.getElementById('final-score');
+            finalScoreEl.innerText = `${carbonScore.toFixed(1)} kg`;
+
+            const endTitle = document.getElementById('end-title');
+            const endEmoji = document.getElementById('end-emoji');
+            const endMessage = document.getElementById('end-message');
+
+            if (carbonScore < 15) {
+                endTitle.innerText = "Earth Hero! 🌍";
+                endEmoji.innerText = "🌟";
+                endMessage.innerText = "Amazing! Your footprint is tiny. You're a true protector of the planet!";
+            } else if (carbonScore < 30) {
+                endTitle.innerText = "Eco Explorer! 🌱";
+                endEmoji.innerText = "👍";
+                endMessage.innerText = "Good effort! You made some great choices, but there's room to save even more carbon.";
+            } else {
+                endTitle.innerText = "Keep Trying! 🌪️";
+                endEmoji.innerText = "🚲";
+                endMessage.innerText = "Your footprint is a bit heavy. Try making greener choices next time to help the Earth!";
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (gameState === 'PLAYING') {
+                for (let i = activeChoices.length - 1; i >= 0; i--) {
+                    const choice = activeChoices[i];
+                    choice.position.z += CHOICE_SPEED; 
+                    choice.position.y = 0.3 + Math.sin(Date.now() * 0.003 + i) * 0.2;
+                    choice.rotation.y += 0.01;
+
+                    const dx = choice.position.x - window.playerMesh.position.x;
+                    const dz = choice.position.z - window.playerMesh.position.z;
+                    const dist = Math.sqrt(dx*dx + dz*dz);
+
+                    if (dist < 1.5) {
+                        updateCarbon(choice.userData.impact);
+                        worldGroup.remove(choice);
+                        activeChoices.splice(i, 1);
+                        document.getElementById('prompt-container').style.opacity = '0';
+                        setTimeout(() => { currentChapter++; loadChapter(); }, 1200);
+                        break; 
+                    }
+                    if (choice.position.z > 5) {
+                        worldGroup.remove(choice);
+                        activeChoices.splice(i, 1);
+                        if (activeChoices.length === 0) setTimeout(loadChapter, 800);
+                    }
+                }
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.onload = () => {
+            init3D();
+            cameraStart.start().then(() => {
+                document.getElementById('loading-content').innerHTML = `
+                    <div class="text-[120px] mb-8 animate-bounce">✨</div>
+                    <h2 class="text-4xl font-black text-[#18542a]">READY!</h2>
+                    <p class="text-xl font-bold text-[#18542a]/70">Step back and show a Peace Sign ✌️!</p>
+                `;
+                setTimeout(() => {
+                   document.getElementById('loading-screen').classList.add('opacity-0');
+                   setTimeout(() => document.getElementById('loading-screen').classList.add('hidden'), 500);
+                }, 1500);
+            });
+            animate();
+        };
+    </script>
+</body>
+</html>
