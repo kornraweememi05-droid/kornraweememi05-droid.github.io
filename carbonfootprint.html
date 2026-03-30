@@ -79,8 +79,9 @@
 </head>
 <body>
 
-    <!-- Audio Element -->
+    <!-- Audio Elements -->
     <audio id="choice-sound" src="punch.mp3" preload="auto"></audio>
+    <audio id="bgm-sound" src="bgm.mp3" preload="auto" loop></audio>
 
     <div id="game-container"></div>
 
@@ -154,6 +155,7 @@
         let activeChoices = [];
         let playerX = 0;
         const choiceSound = document.getElementById('choice-sound');
+        const bgmSound = document.getElementById('bgm-sound');
         
         const COLORS = {
             sunshine: 0xffc926,
@@ -240,6 +242,20 @@
             if (choiceSound) {
                 choiceSound.currentTime = 0;
                 choiceSound.play().catch(e => console.log("Audio play blocked by browser policy"));
+            }
+        }
+
+        function playBGM() {
+            if (bgmSound) {
+                bgmSound.volume = 0.4;
+                bgmSound.play().catch(e => console.log("Audio play blocked by browser policy"));
+            }
+        }
+
+        function stopBGM() {
+            if (bgmSound) {
+                bgmSound.pause();
+                bgmSound.currentTime = 0;
             }
         }
 
@@ -383,6 +399,7 @@
         function startGame() {
             if (gameState !== 'START') return;
             gameState = 'PLAYING';
+            playBGM(); // Start Background Music
             document.getElementById('loading-screen').classList.add('hidden');
             document.getElementById('prompt-container').style.opacity = '0';
             setTimeout(loadChapter, 800);
@@ -420,6 +437,7 @@
 
         function endGame() {
             gameState = 'END';
+            stopBGM(); // Stop Background Music
             document.getElementById('game-ui').style.display = 'none';
             document.getElementById('end-screen').style.display = 'flex';
             document.getElementById('final-score').innerText = `${carbonScore.toFixed(1)} kg`;
@@ -454,7 +472,7 @@
                     const dist = Math.sqrt(dx*dx + dz*dz);
 
                     if (dist < 1.5) {
-                        playPunchSound(); // PLAY SOUND HERE
+                        playPunchSound(); 
                         updateCarbon(choice.userData.impact);
                         worldGroup.remove(choice);
                         activeChoices.splice(i, 1);
